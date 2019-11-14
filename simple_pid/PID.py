@@ -1,17 +1,17 @@
 import time
 import warnings
+import numpy as np
 
 
 def _clamp(value, limits):
     lower, upper = limits
-    if value is None:
-        return None
-    elif upper is not None and value > upper:
-        return upper
-    elif lower is not None and value < lower:
-        return lower
-    return value
 
+    if(value is None):
+        return value
+    elif upper is None and lower is None:
+        return value
+    else:
+        return np.clip(value, lower, upper)
 
 try:
     # get monotonic time to ensure that time deltas are always positive
@@ -28,36 +28,29 @@ class PID(object):
     """
 
     def __init__(self,
-                 Kp=1.0, Ki=0.0, Kd=0.0,
-                 setpoint=0,
+                 dim =1,
                  sample_time=0.01,
-                 output_limits=(None, None),
                  auto_mode=True,
-                 proportional_on_measurement=False):
+                 proportional_on_measurement=False, ):
         """
-        :param Kp: The value for the proportional gain Kp
-        :param Ki: The value for the integral gain Ki
-        :param Kd: The value for the derivative gain Kd
-        :param setpoint: The initial setpoint that the PID will try to achieve
+        :param dim: The number of independent dimentions to do PID control for.
+
         :param sample_time: The time in seconds which the controller should wait before generating a new output value.
                             The PID works best when it is constantly called (eg. during a loop), but with a sample
                             time set so that the time difference between each update is (close to) constant. If set to
                             None, the PID will compute a new output value every time it is called.
-        :param output_limits: The initial output limits to use, given as an iterable with 2 elements, for example:
-                              (lower, upper). The output will never go below the lower limit or above the upper limit.
-                              Either of the limits can also be set to None to have no limit in that direction. Setting
-                              output limits also avoids integral windup, since the integral term will never be allowed
-                              to grow outside of the limits.
         :param auto_mode: Whether the controller should be enabled (in auto mode) or not (in manual mode)
         :param proportional_on_measurement: Whether the proportional term should be calculated on the input directly
                                             rather than on the error (which is the traditional way). Using
                                             proportional-on-measurement avoids overshoot for some types of systems.
+
         """
-        self.Kp, self.Ki, self.Kd = Kp, Ki, Kd
-        self.setpoint = setpoint
+        self.dim = dim
+        self.Kp, self.Ki, self.Kd = np.ones((dim,)), np.zeros((dim,)), np.zeros((dim,))
+        self.setpoint = np.zeros((dim,))
         self.sample_time = sample_time
 
-        self._min_output, self._max_output = output_limits
+        self._min_output, self._max_output = (None,None)
         self._auto_mode = auto_mode
         self.proportional_on_measurement = proportional_on_measurement
 
@@ -131,6 +124,10 @@ class PID(object):
         """Setter for the PID tunings"""
         self.Kp, self.Ki, self.Kd = tunings
 
+        assert (self.Kp.shape == self.setpoint.shape and
+                self.Ki.shape == self.setpoint.shape and
+                self.Kd.shape == self.setpoint.shape) , "Kp, Ki and Kd need to be of shape {}".format(self.setpoint.shape)
+
     @property
     def auto_mode(self):
         """Whether the controller is currently enabled (in auto mode) or not"""
@@ -177,7 +174,9 @@ class PID(object):
 
         min_output, max_output = limits
 
-        if None not in limits and max_output < min_output:
+        if (limits[0] is not None and
+            limits[1] is not None
+            and (max_output < min_output).any()):
             raise ValueError('lower limit must be less than upper limit')
 
         self._min_output = min_output
@@ -191,9 +190,9 @@ class PID(object):
         Reset the PID controller internals, setting each term to 0 as well as cleaning the integral,
         the last output and the last input (derivative calculation).
         """
-        self._proportional = 0
-        self._integral = 0
-        self._derivative = 0
+        self._proportional = np.zeros((self.dim,))
+        self._integral = np.zeros((self.dim,))
+        self._derivative = np.zeros((self.dim,))
 
         self._last_time = _current_time()
         self._last_output = None
