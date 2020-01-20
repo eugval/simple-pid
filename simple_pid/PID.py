@@ -54,6 +54,7 @@ class PID(object):
         self._auto_mode = auto_mode
         self.proportional_on_measurement = proportional_on_measurement
 
+        self.skipped_time=0.
         self.reset()
 
     def __call__(self, input_, dt=None):
@@ -72,10 +73,15 @@ class PID(object):
             dt = now - self._last_time if now - self._last_time else 1e-16
         elif dt <= 0:
             raise ValueError("dt has nonpositive value {}. Must be positive.".format(dt))
+        else:
+            dt = self.skipped_time + dt
 
         if self.sample_time is not None and dt < self.sample_time and self._last_output is not None:
             # only update every sample_time seconds
+            self.skipped_time+=dt
             return self._last_output
+        else:
+            self.skipped_time = 0.
 
         # compute error terms
         error = self.setpoint - input_
